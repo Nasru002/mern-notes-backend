@@ -11,13 +11,31 @@ const connectDB = require('./config/db');
 // Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 5000;
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Trust Render's reverse proxy so req.secure works correctly
+if (isProduction) {
+    app.set('trust proxy', 1);
+}
 
 // Connect to MongoDB
 connectDB();
 
 // Middleware
+const allowedOrigins = [
+    'http://localhost:3000',
+    process.env.FRONTEND_URL
+].filter(Boolean);
+
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (origin, callback) => {
+        // Allow requests with no origin (e.g. mobile apps, curl)
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error(`CORS policy: origin ${origin} not allowed`));
+        }
+    },
     credentials: true
 }));
 
@@ -34,8 +52,9 @@ app.use(session({
         touchAfter: 24 * 3600 // lazy session update
     }),
     cookie: {
-        secure: false, // Set to true if using HTTPS
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        secure: isProduction,        // true on Render (HTTPS), false locally
+        sameSite: isProduction ? 'none' : 'lax', // 'none' required for cross-origin cookies on HTTPS
+        maxAge: 24 * 60 * 60 * 1000  // 24 hours
     }
 }));
 
