@@ -1,3 +1,5 @@
+
+
 // Authentication middleware - preserves exact same logic as original project
 
 const requireAuth = (req, res, next) => {
@@ -15,6 +17,7 @@ const requireAuth = (req, res, next) => {
                     req.session.destroy();
                     return res.status(403).json({ error: 'Your account has been blocked. Please contact admin.' });
                 }
+                req.user = user; // Attach user to request
                 next();
             })
             .catch(err => {

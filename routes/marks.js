@@ -34,8 +34,6 @@ async function syncToAcademicRecord(studentId, subjectId) {
         // Only update internal_marks; preserve whatever attendance was already set
         record.internal_marks = grandTotal;
         await record.save(); // This triggers the pre-save hook → eligibility recalculated
-
-        console.log(`✅ Synced marks: student=${studentId} subject=${subjectId} grandTotal=${grandTotal} status=${record.eligibility_status}`);
     } catch (err) {
         console.error('Sync to AcademicRecord Error:', err);
     }
@@ -139,15 +137,34 @@ router.get('/summary/:studentId', requireAuth, async (req, res) => {
             return res.status(401).json({ success: false, error: 'Unauthorized: Session missing student ID.' });
         }
         const internalMarks = await InternalMark.find({ student_id: studentId }).populate('subject_id', 'name');
+        const academicRecords = await AcademicRecord.find({ student_id: studentId }).populate('subject_id', 'name');
 
         const subjectMap = {};
 
+        // 1. Initialize all enrolled subjects with 0 values
+        academicRecords.forEach(rec => {
+            if (rec.subject_id) {
+                const subId = rec.subject_id._id.toString();
+                subjectMap[subId] = {
+                    subjectId: subId,
+                    subjectName: rec.subject_id.name || 'Unknown Subject',
+                    cia1: 0,
+                    cia2: 0,
+                    model: 0,
+                    assignment: 0,
+                    regularity: 0
+                };
+            }
+        });
+
+        // 2. Overwrite with actual marks if they exist
         internalMarks.forEach(mark => {
+            if (!mark.subject_id) return;
             const subId = mark.subject_id._id.toString();
             if (!subjectMap[subId]) {
                 subjectMap[subId] = {
                     subjectId: subId,
-                    subjectName: mark.subject_id.name,
+                    subjectName: mark.subject_id.name || 'Unknown Subject',
                     cia1: 0,
                     cia2: 0,
                     model: 0,

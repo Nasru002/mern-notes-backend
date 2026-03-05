@@ -7,7 +7,6 @@ const AcademicRecord = require('../models/AcademicRecord'); // Used to check arr
 
 // Helper to get target student ID (self if student, otherwise query param if provided)
 const getTargetStudentId = (req) => {
-    console.log('getTargetStudentId Session:', req.session.userId, req.session.role, req.params.id, req.query.id);
     if (req.session && req.session.role === 'student') {
         return req.session.userId;
     }
@@ -34,20 +33,29 @@ exports.getProfile = async (req, res) => {
             });
         }
 
-        // Let's assume AcademicRecord captures enrolled subjects more accurately
         const actualEnrolledCount = await AcademicRecord.countDocuments({ student_id: studentId });
-
         const approvedLeaves = await Leave.countDocuments({ student_id: studentId, status: 'Approved' });
 
         res.status(200).json({
             success: true,
             data: {
                 _id: student._id,
+                // All name variants so frontend has options
                 name: student.full_name || student.username,
+                full_name: student.full_name || student.username,
+                username: student.username,
+                // Roll number both as registerNumber and roll_number
                 registerNumber: student.roll_number,
+                roll_number: student.roll_number,
+                // Contact
+                email: student.email,
+                phone: student.phone || student.contact_number || null,
+                // Academic info
                 department: student.department,
                 semester: student.semester,
-                section: student.section || 'A', // Assuming section if missing
+                section: student.section || 'A',
+                admission_year: student.admission_year || student.year_of_joining || null,
+                // Counts
                 subjectsEnrolled: actualEnrolledCount > 0 ? actualEnrolledCount : enrolledSubjectsCount,
                 approvedLeaveCount: approvedLeaves
             }
@@ -60,10 +68,11 @@ exports.getProfile = async (req, res) => {
 
 exports.getAttendanceSummary = async (req, res) => {
     try {
-        const studentId = getTargetStudentId(req);
-        if (!studentId) return res.status(400).json({ success: false, message: 'Student ID required.' });
+        const studentId = (req.query.id && req.query.id !== 'undefined') ? req.query.id : (req.user?._id || req.session.userId);
 
-        const attendanceRecords = await Attendance.find({ student_id: studentId }).populate('subject_id', 'name');
+        if (!studentId) {
+            return res.status(400).json({ success: false, message: 'Student ID is required' });
+        } const attendanceRecords = await Attendance.find({ student_id: studentId }).populate('subject_id', 'name');
 
         let totalClasses = attendanceRecords.length;
         let presentCount = attendanceRecords.filter(r => r.status === 'Present').length;
@@ -114,7 +123,16 @@ exports.getAttendanceSummary = async (req, res) => {
         }
 
         percentage = Math.round(percentage);
-        const status = percentage >= 75 ? 'Eligible' : 'Defaulter';
+
+        // FINAL FALLBACK: If still 0, try the user's stored attendance_percentage
+        if (percentage === 0) {
+            const student = await User.findById(studentId).select('attendance_percentage');
+            if (student && student.attendance_percentage > 0) {
+                percentage = Math.round(student.attendance_percentage);
+            }
+        }
+
+        const status = percentage >= 75 ? 'Eligible' : percentage >= 65 ? 'Warning' : 'Defaulter';
 
         res.status(200).json({
             success: true,
@@ -137,10 +155,11 @@ exports.getAttendanceSummary = async (req, res) => {
 
 exports.getInternalSummary = async (req, res) => {
     try {
-        const studentId = getTargetStudentId(req);
-        if (!studentId) return res.status(400).json({ success: false, message: 'Student ID required.' });
+        const studentId = (req.query.id && req.query.id !== 'undefined') ? req.query.id : (req.user?._id || req.session.userId);
 
-        const internalMarks = await InternalMark.find({ student_id: studentId }).populate('subject_id', 'name');
+        if (!studentId) {
+            return res.status(400).json({ success: false, message: 'Student ID is required' });
+        } const internalMarks = await InternalMark.find({ student_id: studentId }).populate('subject_id', 'name');
 
         let totalAverage = 0;
         let subjectsBreakdown = [];
@@ -220,10 +239,11 @@ exports.getInternalSummary = async (req, res) => {
 
 exports.getPlacementStatus = async (req, res) => {
     try {
-        const studentId = getTargetStudentId(req);
-        if (!studentId) return res.status(400).json({ success: false, message: 'Student ID required.' });
+        const studentId = (req.query.id && req.query.id !== 'undefined') ? req.query.id : (req.user?._id || req.session.userId);
 
-        // Calculate Attendance
+        if (!studentId) {
+            return res.status(400).json({ success: false, message: 'Student ID is required' });
+        }  // Calculate Attendance
         const attendanceRecords = await Attendance.find({ student_id: studentId });
         let attPercentage = 0;
         if (attendanceRecords.length > 0) {

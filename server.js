@@ -22,19 +22,10 @@ if (isProduction) {
 connectDB();
 
 // Middleware
-const allowedOrigins = [
-    'http://localhost:3000',
-    process.env.FRONTEND_URL
-].filter(Boolean);
-
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin (e.g. mobile apps, curl)
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error(`CORS policy: origin ${origin} not allowed`));
-        }
+        // Allow all origins
+        callback(null, true);
     },
     credentials: true
 }));

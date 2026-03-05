@@ -13,82 +13,102 @@ const seedData = async () => {
     await connectDB();
 
     try {
-        const student = await User.findOne({ role: 'student' });
-        if (!student) {
-            console.log("No student found. Please seed users first.");
+        const students = await User.find({ role: 'student' });
+        if (students.length === 0) {
+            console.log("No students found. Please seed users first.");
             process.exit(1);
         }
 
-        console.log(`Seeding data for student: ${student.username} (${student._id})`);
+        console.log(`🚀 Starting bulk seed for ${students.length} students...`);
 
-        let departmentId = student.department;
-        if (typeof student.department === 'string') {
-            const tempDept = await mongoose.model('Department').findOne({ name: student.department });
-            if (tempDept) departmentId = tempDept._id;
-        }
+        for (const student of students) {
+            console.log(`--------------------------------------------------`);
+            console.log(`📝 Seeding data for: ${student.full_name || student.username} (${student.roll_number})`);
 
-        const subjects = await Subject.find({ department_id: departmentId }).limit(3);
-        if (subjects.length === 0) {
-            console.log("No subjects found.");
-            process.exit(1);
-        }
+            let departmentId = null;
+            const dept = await Department.findOne({ name: student.department });
+            if (dept) {
+                departmentId = dept._id;
+            } else {
+                // Fallback: pick any department
+                const randomDept = await Department.findOne();
+                if (randomDept) departmentId = randomDept._id;
+            }
 
-        // 1. Seed Attendance
-        await Attendance.deleteMany({ student_id: student._id });
-        const attendanceRecords = [];
-        for (let i = 0; i < 20; i++) {
-            const date = new Date();
-            date.setDate(date.getDate() - i);
-
-            // 85% attendance
-            const status = Math.random() < 0.85 ? 'Present' : 'Absent';
-
-            attendanceRecords.push({
-                student_id: student._id,
-                subject_id: subjects[i % subjects.length]._id,
-                date: date,
-                status: status
+            const subjects = await Subject.find({
+                department_id: departmentId,
+                semester: student.semester || 1
             });
+
+            if (subjects.length === 0) {
+                console.log(`⚠️ No subjects found for ${student.department} Sem ${student.semester}. Skipping.`);
+                continue;
+            }
+
+            // 1. Seed Attendance
+            await Attendance.deleteMany({ student_id: student._id });
+            const attendanceRecords = [];
+            // 30 days of records
+            for (let i = 0; i < 30; i++) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+
+                // Randomize attendance percentage per student (70% to 95%)
+                const threshold = 0.7 + (Math.random() * 0.25);
+                const status = Math.random() < threshold ? 'Present' : 'Absent';
+
+                attendanceRecords.push({
+                    student_id: student._id,
+                    subject_id: subjects[i % subjects.length]._id,
+                    date: date,
+                    status: status
+                });
+            }
+            await Attendance.insertMany(attendanceRecords);
+
+            // 2. Seed Internal Marks
+            await InternalMark.deleteMany({ student_id: student._id });
+            const internalRecords = [];
+            for (const sub of subjects) {
+                // Randomize performance
+                const baseMarks = 15 + Math.floor(Math.random() * 8); // 15-23
+
+                internalRecords.push({
+                    student_id: student._id,
+                    subject_id: sub._id,
+                    exam_type: 'Internal 1',
+                    marks_obtained: Math.min(baseMarks + Math.floor(Math.random() * 3), 25),
+                    max_marks: 25,
+                    date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+                });
+                internalRecords.push({
+                    student_id: student._id,
+                    subject_id: sub._id,
+                    exam_type: 'Internal 2',
+                    marks_obtained: Math.min(baseMarks - 2 + Math.floor(Math.random() * 4), 25),
+                    max_marks: 25,
+                    date: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000)
+                });
+            }
+            await InternalMark.insertMany(internalRecords);
+
+            // 3. Seed Leaves
+            await Leave.deleteMany({ student_id: student._id });
+            if (Math.random() > 0.5) {
+                await Leave.create({
+                    student_id: student._id,
+                    start_date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+                    end_date: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000),
+                    reason: 'Personal reasons / Health',
+                    status: 'Approved'
+                });
+            }
         }
-        await Attendance.insertMany(attendanceRecords);
-        console.log("✅ Attendance seeded");
 
-        // 2. Seed Internal Marks
-        await InternalMark.deleteMany({ student_id: student._id });
-        const internalRecords = [];
-        for (const sub of subjects) {
-            internalRecords.push({
-                student_id: student._id,
-                subject_id: sub._id,
-                exam_type: 'Internal 1',
-                marks_obtained: Math.floor(Math.random() * 10) + 15, // 15-25 marks
-                max_marks: 25
-            });
-            internalRecords.push({
-                student_id: student._id,
-                subject_id: sub._id,
-                exam_type: 'Internal 2',
-                marks_obtained: Math.floor(Math.random() * 10) + 10, // 10-20 marks
-                max_marks: 25
-            });
-        }
-        await InternalMark.insertMany(internalRecords);
-        console.log("✅ Internal Marks seeded");
-
-        // 3. Seed Leaves
-        await Leave.deleteMany({ student_id: student._id });
-        await Leave.create({
-            student_id: student._id,
-            start_date: new Date(),
-            end_date: new Date(),
-            reason: 'Sick leave',
-            status: 'Approved'
-        });
-        console.log("✅ Leaves seeded");
-
-        console.log("All seeding finished successfully!");
+        console.log(`==================================================`);
+        console.log("✅ Bulk seeding finished successfully!");
     } catch (err) {
-        console.error(err);
+        console.error("❌ Seeding Error:", err);
     } finally {
         process.exit(0);
     }
