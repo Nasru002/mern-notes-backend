@@ -26,6 +26,10 @@ const leaveSchema = new mongoose.Schema({
     approved_by: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'
+    },
+    teacherRemarks: {
+        type: String,
+        default: ''
     }
 }, {
     timestamps: true

@@ -38,13 +38,19 @@ const requireAdmin = (req, res, next) => {
     }
 };
 
-// Check specific role
-const requireRole = (role) => {
+// Check specific role (supports multiple roles)
+const requireRole = (...roles) => {
     return (req, res, next) => {
-        if (req.session.role === role) {
+        const currentRole = req.session?.role || req.user?.role;
+        console.log(`[Auth] Checking role for user ${req.session.userId}. Required: ${roles.join(',')}, Found: ${currentRole}`);
+
+        if (roles.includes(currentRole)) {
             next();
         } else {
-            res.status(403).json({ error: 'Insufficient permissions' });
+            res.status(403).json({
+                error: 'Insufficient permissions',
+                message: `Required role(s): ${roles.join(' or ')}. Your role: ${currentRole || 'None'}`
+            });
         }
     };
 };
