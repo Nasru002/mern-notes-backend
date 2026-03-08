@@ -33,9 +33,14 @@ app.use(cors({
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
-// Session configuration (SAME as original project)
+// Session configuration
+const sessionSecret = process.env.SESSION_SECRET;
+if (isProduction && !sessionSecret) {
+    console.warn('⚠️ WARNING: SESSION_SECRET is not set in production. Using a weak fallback.');
+}
+
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'mern-college-notes-secret-key-change-in-production',
+    secret: sessionSecret || 'mern-college-notes-secret-key-change-in-production',
     resave: false,
     saveUninitialized: false,
     store: MongoStore.create({
